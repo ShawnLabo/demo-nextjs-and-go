@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -54,6 +55,9 @@ func (ap *app) handler() http.Handler {
 			r.Get("/", ap.getAccounts)
 			r.Post("/", ap.createAccount)
 		})
+
+		// A secure endpoint called with an API token.
+		r.Get("/secure", ap.secureEndpoint)
 	})
 
 	return r
@@ -161,4 +165,71 @@ func (ap *app) createAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.JSON(w, r, &createAccountResponse{a})
+}
+
+type secureEndpointResponse struct {
+	Message string `json:"message"`
+}
+
+func (ap *app) secureEndpoint(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	logger := getLogger(ctx)
+
+	// API tokens are handed through Authorization Bearer scheme.
+	auth := r.Header.Get("Authorization")
+	if len(auth) <= 7 || auth[:7] != "Bearer " {
+		render.JSON(w, r, &errorResponse{http.StatusBadRequest, "invalid header"})
+		return
+	}
+
+	token := r.Header.Get("Authorization")[7:]
+
+	fn := func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		key := spanner.Key{token}
+
+		// https://pkg.go.dev/cloud.google.com/go/spanner#ReadWriteTransaction.ReadRowUsingIndex
+		row, err := tx.ReadRowUsingIndex(ctx, accountsTable, "ApiTokenIndex", key, []string{"AccountId"})
+		if err != nil {
+			if spanner.ErrCode(err) == codes.NotFound {
+				return err
+			}
+
+			return fmt.Errorf("tx.ReadRowUsingIndex: %w", err)
+		}
+
+		var id string
+
+		// https://pkg.go.dev/cloud.google.com/go/spanner#Row.ColumnByName
+		if err := row.ColumnByName("AccountId", &id); err != nil {
+			return fmt.Errorf("row.ColumnByName: %w", err)
+		}
+
+		// https://pkg.go.dev/cloud.google.com/go/spanner#Statement
+		stmt := spanner.Statement{
+			SQL: `UPDATE ` + accountsTable + `
+              SET LastAccessed = CURRENT_TIMESTAMP()
+              WHERE AccountId = @AccountId`,
+			Params: map[string]interface{}{"AccountId": id},
+		}
+
+		// https://pkg.go.dev/cloud.google.com/go/spanner#ReadWriteTransaction.Update
+		if _, err := tx.Update(ctx, stmt); err != nil {
+			return fmt.Errorf("tx.Update: %w", err)
+		}
+
+		return nil
+	}
+
+	if _, err := ap.spanner.ReadWriteTransaction(ctx, fn); err != nil {
+		if spanner.ErrCode(err) == codes.NotFound {
+			render.JSON(w, r, &errorResponse{http.StatusUnauthorized, "unauthorized"})
+			return
+		}
+
+		logger.Err(err).Msg("ap.spanner.Single().ReadRowUsingIndex")
+		render.JSON(w, r, errResInternalServerError)
+		return
+	}
+
+	render.JSON(w, r, &secureEndpointResponse{"ok"})
 }
