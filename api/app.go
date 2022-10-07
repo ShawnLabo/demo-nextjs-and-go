@@ -76,8 +76,7 @@ func (ap *app) getAccounts(w http.ResponseWriter, r *http.Request) {
 	logger := getLogger(ctx)
 
 	// https://pkg.go.dev/cloud.google.com/go/spanner#Client.Single
-	iter := ap.spanner.Single().Read(ctx, accountsTable, spanner.AllKeys(),
-		[]string{"AccountId", "ApiToken", "Email", "Name", "LastAccessed"})
+	iter := ap.spanner.Single().Read(ctx, accountsTable, spanner.AllKeys(), allAccountColumns)
 	defer iter.Stop()
 
 	accounts := []*account{}

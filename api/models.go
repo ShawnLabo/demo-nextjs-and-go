@@ -11,3 +11,5 @@ type account struct {
 	Name         string     `spanner:"Name" json:"name"`
 	LastAccessed *time.Time `spanner:"LastAccessed" json:"last_accessed"`
 }
+
+var allAccountColumns = []string{"AccountId", "ApiToken", "Email", "Name", "LastAccessed"}
