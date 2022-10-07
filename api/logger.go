@@ -39,6 +39,7 @@ func initLogger(level string, pretty bool) error {
 
 type severityHook struct{}
 
+// https://cloud.google.com/logging/docs/reference/v2/rest/v2/LogEntry#LogSeverity
 func (h severityHook) Run(e *zerolog.Event, l zerolog.Level, msg string) {
 	if l != zerolog.NoLevel {
 		var s string

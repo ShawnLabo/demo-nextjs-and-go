@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"cloud.google.com/go/spanner"
 	"github.com/rs/zerolog/log"
 )
 
@@ -23,7 +24,14 @@ func main() {
 		panic(err)
 	}
 
-	ap := &app{}
+	ctx := context.Background()
+
+	sc, err := spanner.NewClient(ctx, cfg.Database)
+	if err != nil {
+		log.Fatal().Err(err).Msg("spanner.NewClient")
+	}
+
+	ap := &app{sc}
 
 	serve(ap.handler(), cfg.Port)
 }
@@ -59,7 +67,7 @@ func serve(app http.Handler, port string) {
 	log.Info().Msg("started")
 
 	if err := s.ListenAndServe(); err != nil {
-		log.Fatal().Err(err).Msg(err.Error())
+		log.Warn().Err(err).Msg(err.Error())
 	}
 
 	<-idleConnsClosed
